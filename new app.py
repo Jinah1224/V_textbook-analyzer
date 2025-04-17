@@ -13,6 +13,18 @@ st.set_page_config(page_title="📚 교과서 커뮤니티 분석기", layout="w
 st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
 
 # 뉴스 관련 설정
+
+def get_news_date(url):
+    try:
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        soup = BeautifulSoup(res.text, 'lxml')
+        meta = soup.find("meta", {"property": "article:published_time"})
+        if meta and meta.get("content"):
+            return meta["content"][:10].replace("-", ".")
+        return "날짜 없음"
+    except:
+        return "날짜 오류"
+
 keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
 category_keywords = {
     "후원": ["후원", "기탁"],
@@ -50,7 +62,7 @@ def crawl_news_quick(keyword, pages=3):
                     continue
                 seen.add(link)
                 seen.add(summary)
-                date = "날짜 없음"
+                date = get_news_date(link)
                 full_text = (title + " " + summary).lower()
                 results.append({
                     "출판사명": check_publisher(full_text),
@@ -60,7 +72,6 @@ def crawl_news_quick(keyword, pages=3):
                     "URL": link,
                     "요약": summary,
                     "언론사": press,
-                    "내용점검": match_keyword_flag(full_text),
                     "본문내_교과서_또는_발행사_언급": contains_textbook(full_text)
                 })
             except:
