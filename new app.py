@@ -51,6 +51,15 @@ def detect_complaint(text):
     return any(w in text for w in complaint_keywords)
 
 # 뉴스 관련 설정
+keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
+category_keywords = {
+    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
+    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
+    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
+    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"],
+    "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
+}
+
 def get_news_date(url):
     try:
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -62,21 +71,26 @@ def get_news_date(url):
     except:
         return "날짜 오류"
 
-keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
-category_keywords = {
-    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
-    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
-    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
-    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"],
-    "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
-}
+def check_publisher(text):
+    for pub in keywords:
+        if re.search(pub.replace(" ", ""), text.replace(" ", "")):
+            return pub
+    return "기타"
+
+def categorize_news(text):
+    text = text.lower()
+    for cat, words in category_keywords.items():
+        if any(w in text for w in words):
+            return cat
+    return "기타"
+
+def contains_textbook(text):
+    return "O" if "교과서" in text or "발행사" in text else "X"
 
 def crawl_news_quick(keyword, pages=3):
     headers = {"User-Agent": "Mozilla/5.0"}
     results = []
     seen = set()
-    today = datetime.today().date()
-    two_weeks_ago = today - timedelta(days=14)
     for page in range(1, pages + 1):
         start = (page - 1) * 10 + 1
         url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
@@ -89,12 +103,8 @@ def crawl_news_quick(keyword, pages=3):
                 link = a.select_one(".news_tit").get("href")
                 summary = a.select_one(".dsc_txt_wrap").get_text(strip=True)
                 press = a.select_one(".info_group a").get_text(strip=True)
-                if link in seen or summary in seen:
-                    continue
-                seen.add(link)
-                seen.add(summary)
-                date = get_news_date(link)
                 full_text = (title + " " + summary).lower()
+                date = get_news_date(link)
                 results.append({
                     "출판사명": check_publisher(full_text),
                     "카테고리": categorize_news(full_text),
@@ -110,22 +120,6 @@ def crawl_news_quick(keyword, pages=3):
         time.sleep(0.3)
     return pd.DataFrame(results)
 
-def categorize_news(text):
-    text = text.lower()
-    for cat, words in category_keywords.items():
-        if any(w in text for w in words):
-            return cat
-    return "기타"
-
-def check_publisher(text):
-    for pub in keywords:
-        if pub.lower() in text:
-            return pub
-    return "기타"
-
-def contains_textbook(text):
-    return "O" if "교과서" in text or "발행사" in text else "X"
-
 def parse_kakao_text(text):
     parsed = []
     pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후)? (\d{1,2}):(\d{2}), (.+?) : (.+)")
@@ -136,8 +130,7 @@ def parse_kakao_text(text):
     for line in lines:
         if m1 := pattern1.match(line):
             y, m, d, ampm, h, mi, sender, msg = m1.groups()
-            h = int(h)
-            mi = int(mi)
+            h, mi = int(h), int(mi)
             if ampm == "오후" and h != 12:
                 h += 12
             elif ampm == "오전" and h == 12:
@@ -151,8 +144,7 @@ def parse_kakao_text(text):
         elif m2 := pattern2.match(line):
             sender, ampm, h, mi, msg = m2.groups()
             if current_date and sender.strip() != "오픈채팅봇":
-                h = int(h)
-                mi = int(mi)
+                h, mi = int(h), int(mi)
                 if ampm == "오후" and h != 12:
                     h += 12
                 elif ampm == "오전" and h == 12:
@@ -166,6 +158,8 @@ def parse_kakao_text(text):
             y, m, d = map(int, d.groups())
             current_date = datetime(y, m, d).date()
     return pd.DataFrame(parsed)
+
+# Streamlit 탭
 
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
@@ -181,7 +175,6 @@ with tab1:
         if df_kakao.empty:
             st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
-            # ✅ 여기서 분석 필드 적용
             df_kakao["카테고리"] = df_kakao["메시지"].apply(classify_category)
             df_kakao["출판사"] = df_kakao["메시지"].apply(extract_kakao_publisher)
             df_kakao["과목"] = df_kakao["메시지"].apply(extract_subject)
@@ -195,18 +188,16 @@ with tab2:
     st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
     st.markdown("📝 **기본 수집 키워드에서 선택하거나, 직접 입력할 수 있어요.**")
     selected_keywords = st.multiselect("🔎 기본 키워드 선택", keywords, default=keywords)
-    all_selected_keywords = selected_keywords.copy()
-    
-    if not all_selected_keywords:
-        st.warning("❗ 하나 이상의 키워드를 선택하거나 입력해주세요.")
+    if not selected_keywords:
+        st.warning("❗ 하나 이상의 키워드를 선택해주세요.")
     else:
         if st.button("뉴스 수집 시작"):
             progress = st.progress(0)
             all_news = []
-            for i, kw in enumerate(all_selected_keywords):
+            for i, kw in enumerate(selected_keywords):
                 df = crawl_news_quick(kw)
                 all_news.append(df)
-                progress.progress((i+1)/len(all_selected_keywords))
+                progress.progress((i+1)/len(selected_keywords))
             df_news = pd.concat(all_news, ignore_index=True)
             st.success("✅ 뉴스 수집 완료!")
             st.dataframe(df_news)
