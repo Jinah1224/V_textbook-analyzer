@@ -106,7 +106,7 @@ def match_keyword_flag(text):
 def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
-# 카카오톡 분석 정규표현식 (정확한 한 줄)
+# 카카오톡 분석 정규표현식 (1줄 버전)
 def analyze_kakao(text):
     date_line_pattern = re.compile(r"-+\s*(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일.*?-+")
     message_pattern = re.compile(r"\[(?P<sender>.*?)\]\s*\[(?P<ampm>오전|오후)\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})\]\s*(?P<message>.*?)(?=
@@ -151,6 +151,7 @@ def analyze_kakao(text):
 
     return pd.DataFrame(results)
 
+# 분류 기준
 kakao_categories = {
     "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
     "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
@@ -224,4 +225,3 @@ with tab2:
         st.success("✅ 뉴스 크롤링 완료!")
         st.dataframe(df_news)
         st.download_button("📥 뉴스 데이터 다운로드", df_news.to_csv(index=False).encode("utf-8"), "출판사_뉴스_크롤링_결과.csv", "text/csv")
-
