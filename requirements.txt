@@ -4,6 +4,5 @@ requests
 beautifulsoup4
 lxml
 chardet
-selenium
-webdriver-manager
 openpyxl
+xlsxwriter
