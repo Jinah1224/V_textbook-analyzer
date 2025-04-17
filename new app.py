@@ -224,3 +224,4 @@ with tab2:
         st.success("✅ 뉴스 크롤링 완료!")
         st.dataframe(df_news)
         st.download_button("📥 뉴스 데이터 다운로드", df_news.to_csv(index=False).encode("utf-8"), "출판사_뉴스_크롤링_결과.csv", "text/csv")
+
