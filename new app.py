@@ -11,6 +11,48 @@ import time
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
 st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
 
+
+# -------------------------------
+# 카카오톡 분석 기준 및 함수
+# -------------------------------
+kakao_categories = {
+    "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
+    "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
+    "채택: 회의/심의 진행": ["회의", "회의록", "심의", "심사", "운영"],
+    "배송": ["배송"],
+    "배송: 지도서/전시본 도착": ["도착", "왔어요", "전시본", "지도서", "박스"],
+    "배송: 라벨/정리 업무": ["라벨", "분류", "정리", "전시 준비"],
+    "주문: 시스템 사용": ["나이스", "에듀파인", "등록", "입력"],
+    "주문: 공문/정산": ["공문", "정산", "마감일", "요청"],
+    "출판사: 자료 수령/이벤트": ["보조자료", "자료", "기프티콘", "이벤트"],
+    "출판사: 자료 회수/요청": ["회수", "요청", "교사용"]
+}
+publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "좋은책", "지학사", "대교", "이룸", "명진", "천재교육"]
+subjects = ["국어", "수학", "사회", "과학", "영어", "도덕", "음악", "미술", "체육"]
+complaint_keywords = ["안 왔어요", "아직", "늦게", "없어요", "오류", "문제", "왜", "헷갈려", "불편", "안옴", "지연", "안보여요", "못 받았", "힘들어요"]
+
+def classify_category(text):
+    for cat, words in kakao_categories.items():
+        if any(w in text for w in words):
+            return cat
+    return "기타"
+
+def extract_kakao_publisher(text):
+    for pub in publishers:
+        if pub in text:
+            return pub
+    return None
+
+def extract_subject(text):
+    for sub in subjects:
+        if sub in text:
+            return sub
+    return None
+
+def detect_complaint(text):
+    return any(w in text for w in complaint_keywords)
+
+
 # 뉴스 관련 설정
 def get_news_date(url):
     try:
@@ -138,13 +180,6 @@ with tab1:
         encoding = chardet.detect(raw_bytes)["encoding"] or "utf-8"
         text = raw_bytes.decode(encoding, errors="ignore")
         df_kakao = parse_kakao_text(text)
-
-        # ✅ 분석 정보 추가
-        if not df_kakao.empty:
-            df_kakao["카테고리"] = df_kakao["메시지"].apply(classify_category)
-            df_kakao["출판사"] = df_kakao["메시지"].apply(extract_kakao_publisher)
-            df_kakao["과목"] = df_kakao["메시지"].apply(extract_subject)
-            df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
         if df_kakao.empty:
             st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
