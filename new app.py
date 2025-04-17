@@ -3,16 +3,22 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 import chardet
-import requests
-from bs4 import BeautifulSoup
 import time
 from io import BytesIO
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
+# -------------------------------
+# 설정
+# -------------------------------
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
 st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 
 # -------------------------------
-# 카카오톡 기준
+# 기준 데이터
 # -------------------------------
 kakao_categories = {
     "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
@@ -30,12 +36,115 @@ publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "좋
 subjects = ["국어", "수학", "사회", "과학", "영어", "도덕", "음악", "미술", "체육"]
 complaint_keywords = ["안 왔어요", "아직", "늦게", "없어요", "오류", "문제", "왜", "헷갈려", "불편", "안옴", "지연", "안보여요", "못 받았", "힘들어요"]
 
+news_keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
+category_keywords = {
+    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
+    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
+    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
+    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"], "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
+}
+
 # -------------------------------
-# 카카오톡 처리 함수
+# 크롤링 함수 (Selenium 기반)
 # -------------------------------
+def crawl_news_selenium(keyword, pages=3):
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager(version="114.0.5735.90").install()), options=options)
+
+    base_url = "https://search.naver.com/search.naver?where=news&query={query}&sort=1&nso=so:dd,p:2w&start={start}"
+    results = []
+    seen_links = set()
+
+    for page in range(1, pages + 1):
+        start = (page - 1) * 10 + 1
+        driver.get(base_url.format(query=keyword, start=start))
+        time.sleep(1)
+        articles = driver.find_elements(By.CSS_SELECTOR, ".news_area")
+        if not articles:
+            st.info(f"[{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
+        for a in articles:
+            try:
+                title_elem = a.find_element(By.CSS_SELECTOR, ".news_tit")
+                title = title_elem.get_attribute("title")
+                link = title_elem.get_attribute("href")
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+                summary_elem = a.find_element(By.CSS_SELECTOR, ".dsc_txt_wrap")
+                summary = summary_elem.text if summary_elem else ""
+                press = a.find_element(By.CSS_SELECTOR, ".info_group a").text
+                full_text = (title + " " + summary).lower()
+                results.append({
+                    "출판사명": check_publisher(full_text),
+                    "카테고리": categorize_news(full_text),
+                    "날짜": "",  # 생략 (속도 ↑)
+                    "제목": title,
+                    "URL": link,
+                    "요약": summary,
+                    "언론사": press,
+                    "본문내_교과서_또는_발행사_언급": "O" if "교과서" in full_text or "발행사" in full_text else "X"
+                })
+            except:
+                continue
+    driver.quit()
+    return pd.DataFrame(results)
+
+def categorize_news(text):
+    for cat, keywords in category_keywords.items():
+        if any(k in text for k in keywords):
+            return cat
+    return "기타"
+
+def check_publisher(text):
+    for pub in news_keywords:
+        if pub.replace(" ", "") in text.replace(" ", ""):
+            return pub
+    return "기타"
+
+# -------------------------------
+# 카카오톡 파싱 함수
+# -------------------------------
+def parse_kakao_text(text):
+    parsed = []
+    pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후)? (\d{1,2}):(\d{2}), (.+?) : (.+)")
+    pattern2 = re.compile(r"\[(.*?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.+)")
+    date_pattern = re.compile(r"-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일")
+    lines = text.splitlines()
+    current_date = None
+    for line in lines:
+        if m1 := pattern1.match(line):
+            y, m, d, ampm, h, mi, sender, msg = m1.groups()
+            h = int(h)
+            mi = int(mi)
+            if ampm == "오후" and h != 12:
+                h += 12
+            elif ampm == "오전" and h == 12:
+                h = 0
+            dt = datetime(int(y), int(m), int(d), h, mi)
+            if sender.strip() != "오픈채팅봇":
+                parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
+        elif m2 := pattern2.match(line):
+            sender, ampm, h, mi, msg = m2.groups()
+            if current_date:
+                h = int(h)
+                mi = int(mi)
+                if ampm == "오후" and h != 12:
+                    h += 12
+                elif ampm == "오전" and h == 12:
+                    h = 0
+                t = datetime.strptime(f"{h}:{mi}", "%H:%M").time()
+                parsed.append({"날짜": current_date, "시간": t, "보낸 사람": sender.strip(), "메시지": msg.strip()})
+        elif d := date_pattern.match(line):
+            y, m, d = map(int, d.groups())
+            current_date = datetime(y, m, d).date()
+    return pd.DataFrame(parsed)
+
 def classify_category(text):
-    for cat, words in kakao_categories.items():
-        if any(w in text for w in words):
+    for cat, keywords in kakao_categories.items():
+        if any(w in text for w in keywords):
             return cat
     return "기타"
 
@@ -52,120 +161,10 @@ def extract_subject(text):
     return None
 
 def detect_complaint(text):
-    return "O" if any(w in text for w in complaint_keywords) else "X"
-
-def parse_kakao_text(text):
-    parsed = []
-    pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후)? (\d{1,2}):(\d{2}), (.+?) : (.+)")
-    pattern2 = re.compile(r"\[(.*?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.+)")
-    date_pattern = re.compile(r"-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일")
-    lines = text.splitlines()
-    current_date = None
-    for line in lines:
-        if m1 := pattern1.match(line):
-            y, m, d, ampm, h, mi, sender, msg = m1.groups()
-            h, mi = int(h), int(mi)
-            h += 12 if ampm == "오후" and h != 12 else 0
-            h = 0 if ampm == "오전" and h == 12 else h
-            dt = datetime(int(y), int(m), int(d), h, mi)
-            if sender.strip() != "오픈채팅봇":
-                parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
-        elif m2 := pattern2.match(line):
-            sender, ampm, h, mi, msg = m2.groups()
-            h, mi = int(h), int(mi)
-            h += 12 if ampm == "오후" and h != 12 else 0
-            h = 0 if ampm == "오전" and h == 12 else h
-            if current_date and sender.strip() != "오픈채팅봇":
-                parsed.append({"날짜": current_date, "시간": datetime.strptime(f"{h}:{mi}", "%H:%M").time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
-        elif d := date_pattern.match(line):
-            y, m, d = map(int, d.groups())
-            current_date = datetime(y, m, d).date()
-    return pd.DataFrame(parsed)
+    return "O" if any(k in text for k in complaint_keywords) else "X"
 
 # -------------------------------
-# 뉴스 분석 기준 및 함수
-# -------------------------------
-news_keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
-category_keywords = {
-    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
-    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
-    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
-    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"], "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
-}
-
-def get_news_date(url):
-    try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code != 200:
-            return "날짜 오류"
-        soup = BeautifulSoup(res.text, "lxml")
-        meta = soup.find("meta", {"property": "article:published_time"})
-        return meta["content"][:10].replace("-", ".") if meta and meta.get("content") else "날짜 없음"
-    except:
-        return "날짜 오류"
-
-def check_publisher(text):
-    for pub in news_keywords:
-        if pub.replace(" ", "") in text.replace(" ", ""):
-            return pub
-    return "기타"
-
-def categorize_news(text):
-    text = text.lower()
-    for cat, words in category_keywords.items():
-        if any(w in text for w in words):
-            return cat
-    return "기타"
-
-def contains_textbook(text):
-    return "O" if "교과서" in text or "발행사" in text else "X"
-
-def crawl_news_quick(keyword, pages=3):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    results, seen = [], set()
-    for page in range(1, pages + 1):
-        start = (page - 1) * 10 + 1
-        url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
-        res = requests.get(url, headers=headers)
-        if res.status_code != 200:
-            st.warning(f"[{keyword}] 페이지 {page} 응답 오류: {res.status_code}")
-            continue
-        soup = BeautifulSoup(res.text, "html.parser")
-        articles = soup.select("div.news_area")
-        if not articles:
-            st.info(f"ℹ️ [{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
-        for a in articles:
-            try:
-                title_tag = a.select_one("a.news_tit")
-                if not title_tag:
-                    continue
-                title = title_tag.get("title")
-                link = title_tag.get("href")
-                if link in seen:
-                    continue
-                seen.add(link)
-                summary_tag = a.select_one(".dsc_txt_wrap")
-                summary = summary_tag.get_text(strip=True) if summary_tag else ""
-                press_tag = a.select_one(".info_group a.press")
-                press = press_tag.get_text(strip=True) if press_tag else "언론사 없음"
-                full_text = (title + " " + summary).lower()
-                results.append({
-                    "출판사명": check_publisher(full_text),
-                    "카테고리": categorize_news(full_text),
-                    "날짜": get_news_date(link),
-                    "제목": title,
-                    "URL": link,
-                    "요약": summary,
-                    "언론사": press,
-                    "본문내_교과서_또는_발행사_언급": contains_textbook(full_text)
-                })
-            except:
-                continue
-        time.sleep(0.3)
-    return pd.DataFrame(results)
-
-# -------------------------------
-# UI 구성
+# Streamlit UI
 # -------------------------------
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
@@ -196,9 +195,9 @@ with tab2:
         progress = st.progress(0)
         all_news = []
         for i, kw in enumerate(selected_keywords):
-            df = crawl_news_quick(kw)
+            df = crawl_news_selenium(kw)
             all_news.append(df)
-            progress.progress((i + 1) / len(selected_keywords))
+            progress.progress((i+1)/len(selected_keywords))
         df_news = pd.concat(all_news, ignore_index=True)
         st.success("✅ 뉴스 수집 완료!")
         st.dataframe(df_news)
