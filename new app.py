@@ -106,26 +106,11 @@ def match_keyword_flag(text):
 def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
-# 카카오톡 분류 키워드
-kakao_categories = {
-    "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
-    "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
-    "채택: 회의/심의 진행": ["회의", "심의", "회의록", "심사"],
-    "배송": ["배송", "왔어요", "전시본", "지도서"],
-    "주문": ["공문", "정산", "나이스", "에듀파인", "마감일"],
-    "출판사": ["자료", "기프티콘", "교사용", "회수", "요청"]
-}
-publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "지학사"]
-subjects = ["국어", "수학", "사회", "과학", "영어"]
-complaint_keywords = ["안 왔어요", "늦게", "없어요", "문제", "헷갈려", "불편"]
-
+# 카카오톡 분석 정규표현식 (정확한 한 줄)
 def analyze_kakao(text):
     date_line_pattern = re.compile(r"-+\s*(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일.*?-+")
-    message_pattern = re.compile(
-        r"\[(?P<sender>.*?)\]\s*\[(?P<ampm>오전|오후)\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})\]\s*(?P<message>.*?)(?=
-\[|\Z)",
-        re.DOTALL
-    )
+    message_pattern = re.compile(r"\[(?P<sender>.*?)\]\s*\[(?P<ampm>오전|오후)\s*(?P<hour>\d{1,2}):(?P<minute>\d{2})\]\s*(?P<message>.*?)(?=
+\[|\Z)", re.DOTALL)
 
     current_date = None
     results = []
@@ -165,6 +150,18 @@ def analyze_kakao(text):
         })
 
     return pd.DataFrame(results)
+
+kakao_categories = {
+    "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
+    "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
+    "채택: 회의/심의 진행": ["회의", "심의", "회의록", "심사"],
+    "배송": ["배송", "왔어요", "전시본", "지도서"],
+    "주문": ["공문", "정산", "나이스", "에듀파인", "마감일"],
+    "출판사": ["자료", "기프티콘", "교사용", "회수", "요청"]
+}
+publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "지학사"]
+subjects = ["국어", "수학", "사회", "과학", "영어"]
+complaint_keywords = ["안 왔어요", "늦게", "없어요", "문제", "헷갈려", "불편"]
 
 def classify_category(text):
     for cat, words in kakao_categories.items():
