@@ -87,67 +87,6 @@ def check_publisher(text):
 def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
-
-# -------------------------------
-# 카카오톡 분석 함수
-# -------------------------------
-kakao_categories = {
-    "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
-    "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
-    "채택: 회의/심의 진행": ["회의", "심의", "회의록", "심사"],
-    "배송": ["배송", "왔어요", "전시본", "지도서"],
-    "주문": ["공문", "정산", "나이스", "에듀파인", "마감일"],
-    "출판사": ["자료", "기프티콘", "교사용", "회수", "요청"]
-}
-publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "지학사"]
-subjects = ["국어", "수학", "사회", "과학", "영어"]
-complaint_keywords = ["안 왔어요", "늦게", "없어요", "문제", "헷갈려", "불편"]
-
-def analyze_kakao(text):
-    pattern = re.compile(r"(?P<datetime>\d{4}년 \d{1,2}월 \d{1,2}일 (오전|오후) \d{1,2}:\d{2}), (?P<sender>[^:]+) : (?P<message>.+)")
-    matches = pattern.findall(text)
-    rows = []
-    for match in matches:
-        date_str, ampm, sender, message = match
-        if sender.strip() == "오픈채팅봇":
-            continue
-        try:
-            dt = datetime.strptime(date_str.replace("오전", "AM").replace("오후", "PM"), "%Y년 %m월 %d일 %p %I:%M")
-            rows.append({
-                "날짜": dt.date(),
-                "시간": dt.time(),
-                "보낸 사람": sender.strip(),
-                "메시지": message.strip(),
-                "카테고리": classify_category(message),
-                "출판사": extract_kakao_publisher(message),
-                "과목": extract_subject(message),
-                "불만 여부": detect_complaint(message)
-            })
-        except:
-            continue
-    return pd.DataFrame(rows)
-
-def classify_category(text):
-    for cat, words in kakao_categories.items():
-        if any(w in text for w in words):
-            return cat
-    return "기타"
-
-def extract_kakao_publisher(text):
-    for pub in publishers:
-        if pub in text:
-            return pub
-    return None
-
-def extract_subject(text):
-    for sub in subjects:
-        if sub in text:
-            return sub
-    return None
-
-def detect_complaint(text):
-    return any(w in text for w in complaint_keywords)
-
 def parse_kakao_text(text):
     parsed = []
     pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후)? (\d{1,2}):(\d{2}), (.+?) : (.+)")
@@ -199,6 +138,13 @@ with tab1:
         encoding = chardet.detect(raw_bytes)["encoding"] or "utf-8"
         text = raw_bytes.decode(encoding, errors="ignore")
         df_kakao = parse_kakao_text(text)
+
+        # ✅ 분석 정보 추가 적용
+        if not df_kakao.empty:
+            df_kakao["카테고리"] = df_kakao["메시지"].apply(classify_category)
+            df_kakao["출판사"] = df_kakao["메시지"].apply(extract_kakao_publisher)
+            df_kakao["과목"] = df_kakao["메시지"].apply(extract_subject)
+            df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
         if df_kakao.empty:
             st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
