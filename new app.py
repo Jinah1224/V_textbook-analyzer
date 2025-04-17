@@ -116,17 +116,22 @@ def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
 def crawl_news_quick(keyword, pages=3):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results, seen = [], set()
     for page in range(1, pages + 1):
         start = (page - 1) * 10 + 1
         url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, "html.parser")
-        articles = soup.select(".news_area")
-        for a in articles:
-            try:
-                title_tag = a.select_one("a.news_tit")
+        try:
+            res = requests.get(url, headers=headers)
+            soup = BeautifulSoup(res.text, "html.parser")
+            articles = soup.select(".news_area") or soup.select(".list_news .bx")
+            if not articles:
+                st.warning(f"[{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
+                continue
+            for a in articles:
+                title_tag = a.select_one(".news_tit")
+                if not title_tag:
+                    continue
                 title = title_tag.get("title")
                 link = title_tag.get("href")
                 if link in seen:
@@ -147,9 +152,9 @@ def crawl_news_quick(keyword, pages=3):
                     "언론사": press,
                     "본문내_교과서_또는_발행사_언급": contains_textbook(full_text)
                 })
-            except:
-                continue
-        time.sleep(0.3)
+        except Exception as e:
+            st.warning(f"❌ [{keyword}] {page} 페이지에서 오류 발생: {e}")
+        time.sleep(0.5)
     return pd.DataFrame(results)
 
 # -------------------------------
@@ -188,9 +193,12 @@ with tab2:
             all_news.append(df)
             progress.progress((i+1)/len(selected_keywords))
         df_news = pd.concat(all_news, ignore_index=True)
-        st.success("✅ 뉴스 수집 완료!")
-        st.dataframe(df_news)
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_news.to_excel(writer, index=False, sheet_name="뉴스결과")
-        st.download_button("📥 뉴스 엑셀 저장", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        if df_news.empty:
+            st.warning("❗ 수집된 뉴스가 없습니다.")
+        else:
+            st.success("✅ 뉴스 수집 완료!")
+            st.dataframe(df_news)
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_news.to_excel(writer, index=False, sheet_name="뉴스결과")
+            st.download_button("📥 뉴스 엑셀 저장", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
