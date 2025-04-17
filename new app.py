@@ -9,15 +9,10 @@ from bs4 import BeautifulSoup
 import time
 from datetime import timedelta
 
-# -----------------------
-# 공통 설정
-# -----------------------
 st.set_page_config(page_title="📚 교과서 커뮤니티 분석기", layout="wide")
 st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
 
-# -----------------------
-# 뉴스 크롤링 관련 함수
-# -----------------------
+# 뉴스 관련 설정
 keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
 category_keywords = {
     "후원": ["후원", "기탁"],
@@ -92,17 +87,12 @@ def match_keyword_flag(text):
 def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
-# -----------------------
-# 카카오톡 파서 (2가지 형식 모두 대응)
-# -----------------------
+# 카카오톡 분석기
 def parse_kakao_text(text):
     parsed = []
-    # 유형 1: 2024년 9월 2일 오후 4:13, 사용자 : 메시지
     pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후)? (\d{1,2}):(\d{2}), (.+?) : (.+)")
-    # 유형 2: [사용자] [오전 4:13] 메시지 (이전 날짜줄 필요)
     pattern2 = re.compile(r"\[(.*?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.+)")
     date_pattern = re.compile(r"-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일")
-
     lines = text.splitlines()
     current_date = None
 
@@ -118,11 +108,14 @@ def parse_kakao_text(text):
             dt = datetime(int(y), int(m), int(d), h, mi)
             if sender.strip() != "오픈채팅봇":
                 parsed.append({
-                "날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()
-            })
+                    "날짜": dt.date(),
+                    "시간": dt.time(),
+                    "보낸 사람": sender.strip(),
+                    "메시지": msg.strip()
+                })
         elif m2 := pattern2.match(line):
             sender, ampm, h, mi, msg = m2.groups()
-            if current_date:
+            if current_date and sender.strip() != "오픈채팅봇":
                 h = int(h)
                 mi = int(mi)
                 if ampm == "오후" and h != 12:
@@ -130,37 +123,37 @@ def parse_kakao_text(text):
                 elif ampm == "오전" and h == 12:
                     h = 0
                 t = datetime.strptime(f"{h}:{mi}", "%H:%M").time()
-                if sender.strip() != "오픈채팅봇":
                 parsed.append({
-                    "날짜": current_date, "시간": t, "보낸 사람": sender.strip(), "메시지": msg.strip()
+                    "날짜": current_date,
+                    "시간": t,
+                    "보낸 사람": sender.strip(),
+                    "메시지": msg.strip()
                 })
         elif d := date_pattern.match(line):
             y, m, d = map(int, d.groups())
             current_date = datetime(y, m, d).date()
     return pd.DataFrame(parsed)
 
-# -----------------------
-# 탭 UI 구성
-# -----------------------
+# UI
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
 with tab1:
-    st.subheader("카카오톡 대화파일 업로드 (.txt)")
-    uploaded = st.file_uploader("카톡 txt 파일을 업로드하세요", type="txt")
+    st.subheader("카카오톡 .txt 업로드")
+    uploaded = st.file_uploader("카카오톡 대화 텍스트 파일 업로드", type="txt")
     if uploaded:
         raw_bytes = uploaded.read()
         encoding = chardet.detect(raw_bytes)["encoding"] or "utf-8"
         text = raw_bytes.decode(encoding, errors="ignore")
         df_kakao = parse_kakao_text(text)
         if df_kakao.empty:
-            st.warning("❗ 메시지를 추출할 수 없습니다. 다른 형식의 파일일 수 있어요.")
+            st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
-            st.success(f"✅ 총 {len(df_kakao)}개 메시지를 분석했어요!")
+            st.success(f"✅ 총 {len(df_kakao)}개 메시지 분석 완료!")
             st.dataframe(df_kakao)
-            st.download_button("📥 CSV로 저장하기", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_analyzed.csv", "text/csv")
+            st.download_button("📥 CSV 저장", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
 
 with tab2:
-    st.subheader("출판사 관련 뉴스 (최근 2주)")
+    st.subheader("출판사 관련 뉴스 크롤링")
     if st.button("뉴스 수집 시작"):
         progress = st.progress(0)
         all_news = []
@@ -171,5 +164,4 @@ with tab2:
         df_news = pd.concat(all_news, ignore_index=True)
         st.success("✅ 뉴스 수집 완료!")
         st.dataframe(df_news)
-        st.download_button("📥 뉴스 저장", df_news.to_csv(index=False).encode("utf-8"), "news_result.csv", "text/csv")
-
+        st.download_button("📥 뉴스 CSV 저장", df_news.to_csv(index=False).encode("utf-8"), "news_result.csv", "text/csv")
