@@ -15,9 +15,9 @@ st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 # 카카오톡 분석 기준 및 함수
 # -------------------------------
 kakao_categories = {
-    "채탕: 선정 기준/평가": ["\ud3c9\uac00\ud45c", "\uae30\uc900", "\uc120\uc815\uae30\uc900"],
-    "채탕: : \uc위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
-    "채탕: 회의/심의 진행": ["회의", "회의록", "심의", "심사", "운영"],
+    "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
+    "채택: 위원회 운영": ["위원회", "협의회", "대표교사", "위원"],
+    "채택: 회의/심의 진행": ["회의", "회의록", "심의", "심사", "운영"],
     "배송": ["배송"],
     "배송: 지도서/전시본 도착": ["도착", "왔어요", "전시본", "지도서", "박스"],
     "배송: 라벨/정리 업무": ["라벨", "분류", "정리", "전시 준비"],
@@ -124,8 +124,6 @@ def crawl_news_quick(keyword, pages=3):
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
         articles = soup.select(".news_area")
-        if not articles:
-            st.warning(f"[{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
         for a in articles:
             try:
                 title_tag = a.select_one("a.news_tit")
