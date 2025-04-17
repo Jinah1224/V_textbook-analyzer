@@ -164,7 +164,7 @@ with tab1:
             st.download_button("📥 CSV 저장", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
 
 with tab2:
-    st.subheader("출판사 관련 뉴스 크롤링")
+    st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
     if st.button("뉴스 수집 시작"):
         progress = st.progress(0)
         all_news = []
