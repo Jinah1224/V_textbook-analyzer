@@ -116,7 +116,8 @@ def parse_kakao_text(text):
             elif ampm == "오전" and h == 12:
                 h = 0
             dt = datetime(int(y), int(m), int(d), h, mi)
-            parsed.append({
+            if sender.strip() != "오픈채팅봇":
+                parsed.append({
                 "날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()
             })
         elif m2 := pattern2.match(line):
@@ -129,6 +130,7 @@ def parse_kakao_text(text):
                 elif ampm == "오전" and h == 12:
                     h = 0
                 t = datetime.strptime(f"{h}:{mi}", "%H:%M").time()
+                if sender.strip() != "오픈채팅봇":
                 parsed.append({
                     "날짜": current_date, "시간": t, "보낸 사람": sender.strip(), "메시지": msg.strip()
                 })
