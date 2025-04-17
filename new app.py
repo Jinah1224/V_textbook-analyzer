@@ -151,7 +151,7 @@ with tab2:
     st.markdown("📝 **기본 수집 키워드에서 선택하거나, 직접 입력할 수 있어요.**")
 
     selected_keywords = st.multiselect("🔎 기본 키워드 선택", keywords, default=keywords)
-        all_selected_keywords = selected_keywords.copy()
+    all_selected_keywords = selected_keywords.copy()
     
     if not all_selected_keywords:
         st.warning("❗ 하나 이상의 키워드를 선택하거나 입력해주세요.")
