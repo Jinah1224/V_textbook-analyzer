@@ -1,9 +1,10 @@
 streamlit
 pandas
+chardet
 requests
 beautifulsoup4
 lxml
-chardet
 xlsxwriter
+
 
 
