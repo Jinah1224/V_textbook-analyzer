@@ -123,11 +123,14 @@ def crawl_news_quick(keyword, pages=3):
         url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, "html.parser")
-        articles = soup.select("#main_pack .list_news .news_area")
+        articles = soup.select(".news_area")  # ✅ 핵심 수정
+        if not articles:
+            st.warning(f"[{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
         for a in articles:
             try:
                 title_tag = a.select_one("a.news_tit")
-                title, link = title_tag.get("title"), title_tag.get("href")
+                title = title_tag.get("title")
+                link = title_tag.get("href")
                 if link in seen:
                     continue
                 seen.add(link)
