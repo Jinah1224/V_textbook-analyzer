@@ -148,7 +148,7 @@ with tab1:
 
 with tab2:
     st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
-    st.markdown("📝 **기본 수집 키워드에서 선택하거나, 직접 입력할 수 있어요.**")
+    st.markdown("📝 **기본 수집 키워드에서 선택할 수 있어요.**")
 
     selected_keywords = st.multiselect("🔎 기본 키워드 선택", keywords, default=keywords)
     all_selected_keywords = selected_keywords.copy()
