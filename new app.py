@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import time
 
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
-st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
+st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 
 # 뉴스 관련 설정
 def get_news_date(url):
