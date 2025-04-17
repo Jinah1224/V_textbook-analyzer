@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import re
@@ -6,29 +7,9 @@ import chardet
 import requests
 from bs4 import BeautifulSoup
 import time
-import io
 
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
-st.markdown("""
-    <style>
-    .stMultiSelect > div > div {
-        border-radius: 1rem;
-        background-color: #f0f2f6;
-        padding: 0.4rem 0.6rem;
-    }
-    .stMultiSelect div[data-baseweb="tag"] {
-        background-color: #eef0f4;
-        color: #333;
-        border-radius: 8px;
-        font-weight: 500;
-    }
-    .stMultiSelect div[data-baseweb="tag"] span {
-        font-size: 14px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
+st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 
 # -------------------------------
 # 카카오톡 분석 기준 및 함수
@@ -48,14 +29,6 @@ kakao_categories = {
 publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "좋은책", "지학사", "대교", "이룸", "명진", "천재교육"]
 subjects = ["국어", "수학", "사회", "과학", "영어", "도덕", "음악", "미술", "체육"]
 complaint_keywords = ["안 왔어요", "아직", "늦게", "없어요", "오류", "문제", "왜", "헷갈려", "불편", "안옴", "지연", "안보여요", "못 받았", "힘들어요"]
-
-keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
-category_keywords = {
-    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
-    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
-    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
-    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"], "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
-}
 
 def classify_category(text):
     for cat, words in kakao_categories.items():
@@ -78,6 +51,7 @@ def extract_subject(text):
 def detect_complaint(text):
     return any(w in text for w in complaint_keywords)
 
+# 뉴스 관련 설정
 def get_news_date(url):
     try:
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -88,6 +62,15 @@ def get_news_date(url):
         return "날짜 없음"
     except:
         return "날짜 오류"
+
+keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
+category_keywords = {
+    "후원": ["후원", "기탁"], "기부": ["기부"], "협약/MOU": ["협약", "mou"],
+    "에듀테크/디지털교육": ["에듀테크", "디지털교육", "ai교육", "스마트교육"],
+    "정책": ["정책"], "출판": ["출판"], "인사/채용": ["채용", "교사"],
+    "프린트 및 인쇄": ["인쇄", "프린트"], "공급": ["공급"],
+    "교육": ["교육"], "이벤트": ["이벤트", "사은품"]
+}
 
 def crawl_news_quick(keyword, pages=3):
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -154,7 +137,8 @@ def parse_kakao_text(text):
     for line in lines:
         if m1 := pattern1.match(line):
             y, m, d, ampm, h, mi, sender, msg = m1.groups()
-            h, mi = int(h), int(mi)
+            h = int(h)
+            mi = int(mi)
             if ampm == "오후" and h != 12:
                 h += 12
             elif ampm == "오전" and h == 12:
@@ -163,16 +147,13 @@ def parse_kakao_text(text):
             if sender.strip() != "오픈채팅봇":
                 parsed.append({
                     "날짜": dt.date(), "시간": dt.time(),
-                    "보낸 사람": sender.strip(), "메시지": msg.strip(),
-                    "카테고리": classify_category(msg),
-                    "출판사": extract_kakao_publisher(msg),
-                    "과목": extract_subject(msg),
-                    "불만 여부": detect_complaint(msg)
+                    "보낸 사람": sender.strip(), "메시지": msg.strip()
                 })
         elif m2 := pattern2.match(line):
             sender, ampm, h, mi, msg = m2.groups()
             if current_date and sender.strip() != "오픈채팅봇":
-                h, mi = int(h), int(mi)
+                h = int(h)
+                mi = int(mi)
                 if ampm == "오후" and h != 12:
                     h += 12
                 elif ampm == "오전" and h == 12:
@@ -180,18 +161,12 @@ def parse_kakao_text(text):
                 t = datetime.strptime(f"{h}:{mi}", "%H:%M").time()
                 parsed.append({
                     "날짜": current_date, "시간": t,
-                    "보낸 사람": sender.strip(), "메시지": msg.strip(),
-                    "카테고리": classify_category(msg),
-                    "출판사": extract_kakao_publisher(msg),
-                    "과목": extract_subject(msg),
-                    "불만 여부": detect_complaint(msg)
+                    "보낸 사람": sender.strip(), "메시지": msg.strip()
                 })
         elif d := date_pattern.match(line):
             y, m, d = map(int, d.groups())
             current_date = datetime(y, m, d).date()
     return pd.DataFrame(parsed)
-
-# Streamlit 탭
 
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
@@ -203,41 +178,37 @@ with tab1:
         encoding = chardet.detect(raw_bytes)["encoding"] or "utf-8"
         text = raw_bytes.decode(encoding, errors="ignore")
         df_kakao = parse_kakao_text(text)
+
         if df_kakao.empty:
             st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
+            # ✅ 여기서 분석 필드 적용
+            df_kakao["카테고리"] = df_kakao["메시지"].apply(classify_category)
+            df_kakao["출판사"] = df_kakao["메시지"].apply(extract_kakao_publisher)
+            df_kakao["과목"] = df_kakao["메시지"].apply(extract_subject)
+            df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
+
             st.success(f"✅ 총 {len(df_kakao)}개 메시지 분석 완료!")
             st.dataframe(df_kakao)
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                df_kakao.to_excel(writer, index=False)
-            st.download_button(
-                label="📥 카카오톡 엑셀 저장",
-                data=buffer.getvalue(),
-                file_name="kakao_cleaned.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            st.download_button("📥 CSV 저장", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
 
 with tab2:
     st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
+    st.markdown("📝 **기본 수집 키워드에서 선택할 수 있어요.**")
     selected_keywords = st.multiselect("🔎 기본 키워드 선택", keywords, default=keywords)
-    if selected_keywords:
+    all_selected_keywords = selected_keywords.copy()
+    
+    if not all_selected_keywords:
+        st.warning("❗ 하나 이상의 키워드를 선택해주세요.")
+    else:
         if st.button("뉴스 수집 시작"):
             progress = st.progress(0)
             all_news = []
-            for i, kw in enumerate(selected_keywords):
+            for i, kw in enumerate(all_selected_keywords):
                 df = crawl_news_quick(kw)
                 all_news.append(df)
-                progress.progress((i+1)/len(selected_keywords))
+                progress.progress((i+1)/len(all_selected_keywords))
             df_news = pd.concat(all_news, ignore_index=True)
             st.success("✅ 뉴스 수집 완료!")
             st.dataframe(df_news)
-            news_buffer = io.BytesIO()
-            with pd.ExcelWriter(news_buffer, engine="openpyxl") as writer:
-                df_news.to_excel(writer, index=False)
-            st.download_button(
-                label="📥 뉴스 엑셀 저장",
-                data=news_buffer.getvalue(),
-                file_name="news_result.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            st.download_button("📥 뉴스 CSV 저장", df_news.to_csv(index=False).encode("utf-8"), "news_result.csv", "text/csv")
