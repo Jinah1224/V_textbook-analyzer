@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import re
@@ -144,6 +145,7 @@ with tab1:
             st.dataframe(df_kakao)
             st.download_button("📥 CSV 저장", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
 
+
 with tab2:
     st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
     st.markdown("📝 **기본 수집 키워드에서 선택하거나, 직접 입력할 수 있어요.**")
@@ -158,6 +160,9 @@ with tab2:
     if not all_selected_keywords:
         st.warning("❗ 하나 이상의 키워드를 선택하거나 입력해주세요.")
     else:
+        st.markdown("🔍 **사용된 키워드:**")
+        st.code(", ".join(all_selected_keywords), language="")
+
         if st.button("뉴스 수집 시작"):
             progress = st.progress(0)
             all_news = []
@@ -169,4 +174,3 @@ with tab2:
             st.success("✅ 뉴스 수집 완료!")
             st.dataframe(df_news)
             st.download_button("📥 뉴스 CSV 저장", df_news.to_csv(index=False).encode("utf-8"), "news_result.csv", "text/csv")
-
