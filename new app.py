@@ -156,8 +156,6 @@ with tab2:
     if not all_selected_keywords:
         st.warning("❗ 하나 이상의 키워드를 선택하거나 입력해주세요.")
     else:
-        st.markdown("🔍 **사용된 키워드:**")
-        st.code(", ".join(all_selected_keywords), language="")
 
         if st.button("뉴스 수집 시작"):
             progress = st.progress(0)
