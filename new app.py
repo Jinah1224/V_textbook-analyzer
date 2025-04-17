@@ -45,19 +45,16 @@ category_keywords = {
 }
 
 # -------------------------------
-# 크롤링 함수 (Selenium + User-Agent 헤더 강화)
+# 뉴스 크롤링 (Selenium)
 # -------------------------------
 def crawl_news_selenium(keyword, pages=3):
     options = Options()
-    options.add_argument("--headless=new")  # 최신 방식 headless
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                         f"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    options.add_argument("accept-language=ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7")
-    options.add_argument("referer=https://www.google.com")
-
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.90 Safari/537.36")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
     base_url = "https://search.naver.com/search.naver?where=news&query={query}&sort=1&nso=so:dd,p:2w&start={start}"
     results = []
     seen_links = set()
@@ -65,7 +62,7 @@ def crawl_news_selenium(keyword, pages=3):
     for page in range(1, pages + 1):
         start = (page - 1) * 10 + 1
         driver.get(base_url.format(query=keyword, start=start))
-        time.sleep(1.2)
+        time.sleep(1)
         articles = driver.find_elements(By.CSS_SELECTOR, ".news_area")
         for a in articles:
             try:
@@ -82,7 +79,7 @@ def crawl_news_selenium(keyword, pages=3):
                 results.append({
                     "출판사명": check_publisher(full_text),
                     "카테고리": categorize_news(full_text),
-                    "날짜": "",
+                    "날짜": "",  # 생략으로 속도 ↑
                     "제목": title,
                     "URL": link,
                     "요약": summary,
@@ -119,19 +116,26 @@ def parse_kakao_text(text):
     for line in lines:
         if m1 := pattern1.match(line):
             y, m, d, ampm, h, mi, sender, msg = m1.groups()
-            h, mi = int(h), int(mi)
-            if ampm == "오후" and h != 12: h += 12
-            if ampm == "오전" and h == 12: h = 0
+            h = int(h)
+            mi = int(mi)
+            if ampm == "오후" and h != 12:
+                h += 12
+            elif ampm == "오전" and h == 12:
+                h = 0
             dt = datetime(int(y), int(m), int(d), h, mi)
             if sender.strip() != "오픈채팅봇":
                 parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
         elif m2 := pattern2.match(line):
             sender, ampm, h, mi, msg = m2.groups()
             if current_date:
-                h, mi = int(h), int(mi)
-                if ampm == "오후" and h != 12: h += 12
-                if ampm == "오전" and h == 12: h = 0
-                parsed.append({"날짜": current_date, "시간": datetime.strptime(f"{h}:{mi}", "%H:%M").time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
+                h = int(h)
+                mi = int(mi)
+                if ampm == "오후" and h != 12:
+                    h += 12
+                elif ampm == "오전" and h == 12:
+                    h = 0
+                t = datetime.strptime(f"{h}:{mi}", "%H:%M").time()
+                parsed.append({"날짜": current_date, "시간": t, "보낸 사람": sender.strip(), "메시지": msg.strip()})
         elif d := date_pattern.match(line):
             y, m, d = map(int, d.groups())
             current_date = datetime(y, m, d).date()
