@@ -12,7 +12,7 @@ st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기"
 st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 
 # -------------------------------
-# 카카오톡 분석 기준 및 함수
+# 카카오톡 기준
 # -------------------------------
 kakao_categories = {
     "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
@@ -30,6 +30,9 @@ publishers = ["미래엔", "비상", "동아", "아이스크림", "천재", "좋
 subjects = ["국어", "수학", "사회", "과학", "영어", "도덕", "음악", "미술", "체육"]
 complaint_keywords = ["안 왔어요", "아직", "늦게", "없어요", "오류", "문제", "왜", "헷갈려", "불편", "안옴", "지연", "안보여요", "못 받았", "힘들어요"]
 
+# -------------------------------
+# 카카오톡 처리 함수
+# -------------------------------
 def classify_category(text):
     for cat, words in kakao_categories.items():
         if any(w in text for w in words):
@@ -80,7 +83,7 @@ def parse_kakao_text(text):
     return pd.DataFrame(parsed)
 
 # -------------------------------
-# 뉴스 수집 함수
+# 뉴스 분석 기준 및 함수
 # -------------------------------
 news_keywords = ["천재교육", "천재교과서", "지학사", "벽호", "프린피아", "미래엔", "교과서", "동아출판"]
 category_keywords = {
@@ -93,9 +96,11 @@ category_keywords = {
 def get_news_date(url):
     try:
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
+        if res.status_code != 200:
+            return "날짜 오류"
+        soup = BeautifulSoup(res.text, "lxml")
         meta = soup.find("meta", {"property": "article:published_time"})
-        return meta["content"][:10].replace("-", ".") if meta else "날짜 없음"
+        return meta["content"][:10].replace("-", ".") if meta and meta.get("content") else "날짜 없음"
     except:
         return "날짜 오류"
 
@@ -116,20 +121,22 @@ def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
 def crawl_news_quick(keyword, pages=3):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    headers = {"User-Agent": "Mozilla/5.0"}
     results, seen = [], set()
     for page in range(1, pages + 1):
         start = (page - 1) * 10 + 1
         url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
-        try:
-            res = requests.get(url, headers=headers)
-            soup = BeautifulSoup(res.text, "html.parser")
-            articles = soup.select(".news_area") or soup.select(".list_news .bx")
-            if not articles:
-                st.warning(f"[{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
-                continue
-            for a in articles:
-                title_tag = a.select_one(".news_tit")
+        res = requests.get(url, headers=headers)
+        if res.status_code != 200:
+            st.warning(f"[{keyword}] 페이지 {page} 응답 오류: {res.status_code}")
+            continue
+        soup = BeautifulSoup(res.text, "html.parser")
+        articles = soup.select("div.news_area")
+        if not articles:
+            st.info(f"ℹ️ [{keyword}] 페이지 {page}에 뉴스 기사가 없습니다.")
+        for a in articles:
+            try:
+                title_tag = a.select_one("a.news_tit")
                 if not title_tag:
                     continue
                 title = title_tag.get("title")
@@ -139,7 +146,7 @@ def crawl_news_quick(keyword, pages=3):
                 seen.add(link)
                 summary_tag = a.select_one(".dsc_txt_wrap")
                 summary = summary_tag.get_text(strip=True) if summary_tag else ""
-                press_tag = a.select_one(".info_group a")
+                press_tag = a.select_one(".info_group a.press")
                 press = press_tag.get_text(strip=True) if press_tag else "언론사 없음"
                 full_text = (title + " " + summary).lower()
                 results.append({
@@ -152,9 +159,9 @@ def crawl_news_quick(keyword, pages=3):
                     "언론사": press,
                     "본문내_교과서_또는_발행사_언급": contains_textbook(full_text)
                 })
-        except Exception as e:
-            st.warning(f"❌ [{keyword}] {page} 페이지에서 오류 발생: {e}")
-        time.sleep(0.5)
+            except:
+                continue
+        time.sleep(0.3)
     return pd.DataFrame(results)
 
 # -------------------------------
@@ -191,14 +198,11 @@ with tab2:
         for i, kw in enumerate(selected_keywords):
             df = crawl_news_quick(kw)
             all_news.append(df)
-            progress.progress((i+1)/len(selected_keywords))
+            progress.progress((i + 1) / len(selected_keywords))
         df_news = pd.concat(all_news, ignore_index=True)
-        if df_news.empty:
-            st.warning("❗ 수집된 뉴스가 없습니다.")
-        else:
-            st.success("✅ 뉴스 수집 완료!")
-            st.dataframe(df_news)
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_news.to_excel(writer, index=False, sheet_name="뉴스결과")
-            st.download_button("📥 뉴스 엑셀 저장", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.success("✅ 뉴스 수집 완료!")
+        st.dataframe(df_news)
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df_news.to_excel(writer, index=False, sheet_name="뉴스결과")
+        st.download_button("📥 뉴스 엑셀 저장", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
