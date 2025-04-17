@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import time
 
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
-st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
+st.title("📚 카카오톡 분석 & 뉴스 수집 통합 앱")
 
 # -------------------------------
 # 카카오톡 분석 기준 및 함수
@@ -73,7 +73,7 @@ def get_news_date(url):
 
 def check_publisher(text):
     for pub in keywords:
-        if re.search(pub.replace(" ", ""), text.replace(" ", "")):
+        if pub.lower().replace(" ", "") in text.replace(" ", ""):
             return pub
     return "기타"
 
@@ -88,34 +88,29 @@ def contains_textbook(text):
     return "O" if "교과서" in text or "발행사" in text else "X"
 
 def crawl_news_quick(keyword, pages=3):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     results = []
     seen = set()
     for page in range(1, pages + 1):
         start = (page - 1) * 10 + 1
         url = f"https://search.naver.com/search.naver?where=news&query={keyword}&sort=1&nso=so:dd,p:2w&start={start}"
         res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, "lxml")
-        articles = soup.select(".news_area")
-        print(f"🔍 [DEBUG] {len(articles)} articles found on page {page} for keyword '{keyword}'")
+        soup = BeautifulSoup(res.text, "html.parser")
+        articles = soup.select("#main_pack .list_news .news_wrap.api_ani_send")
         for a in articles:
             try:
-                title_elem = a.select_one(".news_tit")
-                summary_elem = a.select_one(".dsc_txt_wrap")
-                press_elem = a.select_one(".info_group a")
-
-                if not title_elem or not summary_elem or not press_elem:
-                    print("⚠️ Skipping article due to missing elements")
+                title_tag = a.select_one("a.news_tit")
+                title = title_tag.get("title")
+                link = title_tag.get("href")
+                summary_tag = a.select_one(".dsc_txt_wrap")
+                summary = summary_tag.get_text(strip=True) if summary_tag else ""
+                press_tag = a.select_one(".info_group a")
+                press = press_tag.get_text(strip=True) if press_tag else "언론사 없음"
+                if link in seen:
                     continue
-
-                title = title_elem.get("title")
-                link = title_elem.get("href")
-                summary = summary_elem.get_text(strip=True)
-                press = press_elem.get_text(strip=True)
-
+                seen.add(link)
                 full_text = (title + " " + summary).lower()
                 date = get_news_date(link)
-
                 results.append({
                     "출판사명": check_publisher(full_text),
                     "카테고리": categorize_news(full_text),
@@ -127,9 +122,9 @@ def crawl_news_quick(keyword, pages=3):
                     "본문내_교과서_또는_발행사_언급": contains_textbook(full_text)
                 })
             except Exception as e:
-                print(f"❌ Error parsing article: {e}")
+                print("[Error parsing article]", e)
                 continue
-        time.sleep(0.5)
+        time.sleep(0.3)
     return pd.DataFrame(results)
 
 def parse_kakao_text(text):
