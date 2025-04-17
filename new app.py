@@ -11,7 +11,6 @@ import time
 st.set_page_config(page_title="📚 AI 기반 교과서 관련 동향 분석기", layout="wide")
 st.title("📚 카카오톡 분석 + 뉴스 수집 통합 앱")
 
-
 # -------------------------------
 # 카카오톡 분석 기준 및 함수
 # -------------------------------
@@ -51,7 +50,6 @@ def extract_subject(text):
 
 def detect_complaint(text):
     return any(w in text for w in complaint_keywords)
-
 
 # 뉴스 관련 설정
 def get_news_date(url):
@@ -180,25 +178,29 @@ with tab1:
         encoding = chardet.detect(raw_bytes)["encoding"] or "utf-8"
         text = raw_bytes.decode(encoding, errors="ignore")
         df_kakao = parse_kakao_text(text)
+
         if df_kakao.empty:
             st.warning("❗ 메시지를 추출할 수 없습니다.")
         else:
+            # ✅ 여기서 분석 필드 적용
+            df_kakao["카테고리"] = df_kakao["메시지"].apply(classify_category)
+            df_kakao["출판사"] = df_kakao["메시지"].apply(extract_kakao_publisher)
+            df_kakao["과목"] = df_kakao["메시지"].apply(extract_subject)
+            df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
+
             st.success(f"✅ 총 {len(df_kakao)}개 메시지 분석 완료!")
             st.dataframe(df_kakao)
             st.download_button("📥 CSV 저장", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
 
-
 with tab2:
     st.subheader("출판사 관련 뉴스 크롤링(최근 2주)")
     st.markdown("📝 **기본 수집 키워드에서 선택하거나, 직접 입력할 수 있어요.**")
-
     selected_keywords = st.multiselect("🔎 기본 키워드 선택", keywords, default=keywords)
     all_selected_keywords = selected_keywords.copy()
     
     if not all_selected_keywords:
         st.warning("❗ 하나 이상의 키워드를 선택하거나 입력해주세요.")
     else:
-
         if st.button("뉴스 수집 시작"):
             progress = st.progress(0)
             all_news = []
