@@ -7,7 +7,7 @@ from io import BytesIO
 import feedparser
 
 # -------------------------------
-# Streamlit 기본 설정
+# 기본 설정
 # -------------------------------
 st.set_page_config(page_title="📚 교과서 분석기", layout="wide")
 st.title("📚 카카오톡 분석 + Google 뉴스 RSS 수집 통합 앱")
@@ -40,11 +40,11 @@ category_keywords = {
 }
 
 # -------------------------------
-# 뉴스 크롤링 (Google RSS)
+# Google 뉴스 RSS 크롤링
 # -------------------------------
 def crawl_google_news_rss(keyword):
-    feed_url = f"https://news.google.com/rss/search?q={keyword}&hl=ko&gl=KR&ceid=KR:ko"
-    feed = feedparser.parse(feed_url)
+    url = f"https://news.google.com/rss/search?q={keyword}&hl=ko&gl=KR&ceid=KR:ko"
+    feed = feedparser.parse(url)
     results = []
     for entry in feed.entries:
         title = entry.title
@@ -91,8 +91,8 @@ def parse_kakao_text(text):
             if sender.strip() == "오픈채팅봇":
                 continue
             h, mi = int(h), int(mi)
-            if ampm == "오후" and h != 12: h += 12
-            elif ampm == "오전" and h == 12: h = 0
+            h += 12 if ampm == "오후" and h != 12 else 0
+            h = 0 if ampm == "오전" and h == 12 else h
             dt = datetime(int(y), int(m), int(d), h, mi)
             parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
         elif m2 := pattern2.match(line):
@@ -100,8 +100,8 @@ def parse_kakao_text(text):
             if sender.strip() == "오픈채팅봇":
                 continue
             h, mi = int(h), int(mi)
-            if ampm == "오후" and h != 12: h += 12
-            elif ampm == "오전" and h == 12: h = 0
+            h += 12 if ampm == "오후" and h != 12 else 0
+            h = 0 if ampm == "오전" and h == 12 else h
             if current_date:
                 parsed.append({"날짜": current_date, "시간": datetime.strptime(f"{h}:{mi}", "%H:%M").time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
         elif dh := date_header.match(line):
@@ -131,7 +131,7 @@ def detect_complaint(text):
     return "O" if any(w in text for w in complaint_keywords) else "X"
 
 # -------------------------------
-# Streamlit UI
+# Streamlit 인터페이스
 # -------------------------------
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
@@ -150,6 +150,7 @@ with tab1:
             df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
             st.success(f"✅ {len(df_kakao)}개 메시지 분석 완료!")
             st.dataframe(df_kakao)
+
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
                 df_kakao.to_excel(writer, index=False)
