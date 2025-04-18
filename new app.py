@@ -7,13 +7,13 @@ from io import BytesIO
 import feedparser
 
 # -------------------------------
-# Streamlit 기본 설정
+# 기본 설정
 # -------------------------------
 st.set_page_config(page_title="📚 교과서 분석기", layout="wide")
-st.title("📚 카카오톡 분석 + Google 뉴스 RSS 수집 통합 앱")
+st.title("📚 카카오톡 분석 + Google 뉴스 수집 통합 앱")
 
 # -------------------------------
-# 기준 데이터
+# 기준 키워드 및 분류
 # -------------------------------
 kakao_categories = {
     "채택: 선정 기준/평가": ["평가표", "기준", "추천의견서", "선정기준"],
@@ -40,7 +40,61 @@ category_keywords = {
 }
 
 # -------------------------------
-# 뉴스 RSS 크롤링
+# 카카오톡 분석 함수
+# -------------------------------
+def parse_kakao_text(text):
+    parsed = []
+    pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후) (\d{1,2}):(\d{2}), (.+?) : (.+)")
+    pattern2 = re.compile(r"\[(.+?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.+)")
+    date_header = re.compile(r"-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일")
+    current_date = None
+    for line in text.splitlines():
+        if m1 := pattern1.match(line):
+            y, m, d, ampm, h, mi, sender, msg = m1.groups()
+            if sender.strip() == "오픈채팅봇":
+                continue
+            h, mi = int(h), int(mi)
+            h += 12 if ampm == "오후" and h != 12 else 0
+            h = 0 if ampm == "오전" and h == 12 else h
+            dt = datetime(int(y), int(m), int(d), h, mi)
+            parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
+        elif m2 := pattern2.match(line):
+            sender, ampm, h, mi, msg = m2.groups()
+            if sender.strip() == "오픈채팅봇":
+                continue
+            h, mi = int(h), int(mi)
+            h += 12 if ampm == "오후" and h != 12 else 0
+            h = 0 if ampm == "오전" and h == 12 else h
+            if current_date:
+                parsed.append({"날짜": current_date, "시간": datetime.strptime(f"{h}:{mi}", "%H:%M").time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
+        elif dh := date_header.match(line):
+            y, m, d = map(int, dh.groups())
+            current_date = datetime(y, m, d).date()
+    return pd.DataFrame(parsed)
+
+def classify_category(text):
+    for cat, kws in kakao_categories.items():
+        if any(w in text for w in kws):
+            return cat
+    return "기타"
+
+def extract_kakao_publisher(text):
+    for pub in publishers:
+        if pub in text:
+            return pub
+    return None
+
+def extract_subject(text):
+    for sub in subjects:
+        if sub in text:
+            return sub
+    return None
+
+def detect_complaint(text):
+    return "O" if any(w in text for w in complaint_keywords) else "X"
+
+# -------------------------------
+# Google 뉴스 RSS 크롤러
 # -------------------------------
 def crawl_google_news_rss(keyword):
     feed_url = f"https://news.google.com/rss/search?q={keyword}&hl=ko&gl=KR&ceid=KR:ko"
@@ -77,57 +131,7 @@ def check_publisher(text):
     return "기타"
 
 # -------------------------------
-# 카카오톡 파싱
-# -------------------------------
-def parse_kakao_text(text):
-    parsed = []
-    pattern1 = re.compile(r"(\d{4})년 (\d{1,2})월 (\d{1,2})일 (오전|오후) (\d{1,2}):(\d{2}), (.+?) : (.+)")
-    pattern2 = re.compile(r"\[(.+?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.+)")
-    date_header = re.compile(r"-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일")
-    current_date = None
-    for line in text.splitlines():
-        if m1 := pattern1.match(line):
-            y, m, d, ampm, h, mi, sender, msg = m1.groups()
-            h, mi = int(h), int(mi)
-            if ampm == "오후" and h != 12: h += 12
-            elif ampm == "오전" and h == 12: h = 0
-            dt = datetime(int(y), int(m), int(d), h, mi)
-            parsed.append({"날짜": dt.date(), "시간": dt.time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
-        elif m2 := pattern2.match(line):
-            sender, ampm, h, mi, msg = m2.groups()
-            h, mi = int(h), int(mi)
-            if ampm == "오후" and h != 12: h += 12
-            elif ampm == "오전" and h == 12: h = 0
-            if current_date:
-                parsed.append({"날짜": current_date, "시간": datetime.strptime(f"{h}:{mi}", "%H:%M").time(), "보낸 사람": sender.strip(), "메시지": msg.strip()})
-        elif dh := date_header.match(line):
-            y, m, d = map(int, dh.groups())
-            current_date = datetime(y, m, d).date()
-    return pd.DataFrame(parsed)
-
-def classify_category(text):
-    for cat, kws in kakao_categories.items():
-        if any(w in text for w in kws):
-            return cat
-    return "기타"
-
-def extract_kakao_publisher(text):
-    for pub in publishers:
-        if pub in text:
-            return pub
-    return None
-
-def extract_subject(text):
-    for sub in subjects:
-        if sub in text:
-            return sub
-    return None
-
-def detect_complaint(text):
-    return "O" if any(w in text for w in complaint_keywords) else "X"
-
-# -------------------------------
-# Streamlit UI 구성
+# Streamlit UI
 # -------------------------------
 tab1, tab2 = st.tabs(["💬 카카오톡 분석", "📰 뉴스 수집"])
 
@@ -146,12 +150,15 @@ with tab1:
             df_kakao["불만 여부"] = df_kakao["메시지"].apply(detect_complaint)
             st.success(f"✅ {len(df_kakao)}개 메시지 분석 완료!")
             st.dataframe(df_kakao)
-            st.download_button("📥 CSV 다운로드", df_kakao.to_csv(index=False).encode("utf-8"), "kakao_cleaned.csv", "text/csv")
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                df_kakao.to_excel(writer, index=False, sheet_name="카카오톡분석")
+            st.download_button("📥 엑셀 다운로드", buffer.getvalue(), "kakao_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
             st.warning("❗ 유효한 메시지를 추출할 수 없습니다.")
 
 with tab2:
-    st.subheader("Google 뉴스 RSS 기반 수집 (최근 뉴스)")
+    st.subheader("Google 뉴스 RSS 수집 (최근 뉴스)")
     selected = st.multiselect("🔎 수집 키워드 선택", news_keywords, default=news_keywords)
     if selected and st.button("뉴스 수집 시작"):
         progress = st.progress(0)
@@ -159,11 +166,11 @@ with tab2:
         for i, kw in enumerate(selected):
             df = crawl_google_news_rss(kw)
             all_data.append(df)
-            progress.progress((i+1)/len(selected))
+            progress.progress((i + 1) / len(selected))
         df_news = pd.concat(all_data, ignore_index=True)
         st.success("✅ 뉴스 수집 완료!")
         st.dataframe(df_news)
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-            df_news.to_excel(writer, index=False)
-        st.download_button("📥 엑셀 다운로드", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            df_news.to_excel(writer, index=False, sheet_name="뉴스결과")
+        st.download_button("📥 뉴스 엑셀 저장", buffer.getvalue(), "news_result.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
